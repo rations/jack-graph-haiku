@@ -1,0 +1,16 @@
+# Matches the style of the Linux jack-graph sources this project ports from:
+# 4-space indentation, attached braces, m_ member naming left untouched.
+BasedOnStyle: LLVM
+Language: Cpp
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+BreakBeforeBraces: Attach
+PointerAlignment: Left
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+SortIncludes: false
+IndentCaseLabels: true
+AccessModifierOffset: -4
