@@ -18,16 +18,21 @@ enum {
     kMsgMenuZoomIn = 'mzin',
     kMsgMenuZoomOut = 'mzot',
     kMsgMenuZoomNormal = 'mznl',
+    kMsgMenuResetLayout = 'mrsl',
     kMsgMenuSettings = 'mset',
     kMsgMenuAbout = 'mabt',
 
-    // Server supervisor -> windows
+    // Server supervisor -> MainWindow (relayed to SettingsWindow).
+    // Failure/crash messages carry "log" (string): jackd output tail.
     kMsgServerStarted = 'svst',
     kMsgServerFailed = 'svfl',
     kMsgServerStopped = 'svsp',
     kMsgServerCrashed = 'svcr',
 
-    // SettingsWindow -> supervisor / MainWindow
+    // SettingsWindow -> MainWindow. Start carries the chosen settings:
+    // "interface" (string, may be empty for default), "sample_rate",
+    // "frames" and "periods" (int32), "realtime" and "midi" (bool).
     kMsgServerStartRequest = 'svrq',
-    kMsgServerStopRequest = 'svsq'
+    kMsgServerStopRequest = 'svsq',
+    kMsgSettingsClosed = 'stcl'
 };

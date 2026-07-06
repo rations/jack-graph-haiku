@@ -7,7 +7,12 @@ Node::Node(const std::string& name, PortType type, PortDirection direction)
     if (colon != std::string::npos) {
         std::string client = name.substr(0, colon);
         std::string port_part = name.substr(colon + 1);
-        if (client == "system") {
+        /* Hardware clients are split into per-direction pseudo-clients
+         * ("system:capture", "system_midi:playback", ...) so capture and
+         * playback land in separate boxes. On Haiku the haikumidi slave
+         * publishes MIDI under its own "system_midi" client, which needs the
+         * same treatment as "system" (only the latter existed on Linux). */
+        if (client == "system" || client == "system_midi") {
             auto last_underscore = port_part.rfind('_');
             if (last_underscore != std::string::npos) {
                 std::string suffix = port_part.substr(last_underscore + 1);
@@ -19,12 +24,12 @@ Node::Node(const std::string& name, PortType type, PortDirection direction)
                     }
                 }
                 if (is_number) {
-                    client_name = "system:" + port_part.substr(0, last_underscore);
+                    client_name = client + ":" + port_part.substr(0, last_underscore);
                 } else {
-                    client_name = "system:" + port_part;
+                    client_name = client + ":" + port_part;
                 }
             } else {
-                client_name = "system:" + port_part;
+                client_name = client + ":" + port_part;
             }
         } else {
             client_name = client;

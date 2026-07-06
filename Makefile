@@ -9,7 +9,9 @@ CXXFLAGS = -std=c++17 -Wall -Wextra -MMD -MP \
 LDFLAGS = -L$(NONPACKAGED)/lib -ljack -lbe
 
 SOURCES = src/main.cpp src/JackGraphApp.cpp src/MainWindow.cpp \
-          src/GraphCanvasView.cpp
+          src/GraphCanvasView.cpp src/Node.cpp src/Connection.cpp \
+          src/ClientBox.cpp src/Config.cpp src/JackClient.cpp \
+          src/JackServerControl.cpp src/SettingsWindow.cpp
 OBJECTS = $(SOURCES:.cpp=.o)
 DEPS    = $(OBJECTS:.o=.d)
 TARGET = JackGraph

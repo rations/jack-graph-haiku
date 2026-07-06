@@ -21,11 +21,11 @@ static const rgb_color kCable = {140, 140, 153, 128};
 static const rgb_color kDragPreview = {230, 128, 51, 178};
 
 GraphCanvasView::GraphCanvasView()
-    : BView("graph_canvas", B_WILL_DRAW | B_FRAME_EVENTS), m_zoom(1.0), m_pan_x(0.0),
-      m_pan_y(0.0), m_is_dragging(false), m_is_panning(false), m_is_moving_box(false),
-      m_drag_source(nullptr), m_moving_box(nullptr), m_drag_current_x(0), m_drag_current_y(0),
-      m_pan_start_x(0), m_pan_start_y(0), m_box_move_offset_x(0), m_box_move_offset_y(0),
-      m_did_initial_fit(false), m_offscreen(nullptr), m_offscreen_view(nullptr) {
+    : BView("graph_canvas", B_WILL_DRAW | B_FRAME_EVENTS), m_zoom(1.0), m_pan_x(0.0), m_pan_y(0.0),
+      m_is_dragging(false), m_is_panning(false), m_is_moving_box(false), m_drag_source(nullptr),
+      m_moving_box(nullptr), m_drag_current_x(0), m_drag_current_y(0), m_pan_start_x(0),
+      m_pan_start_y(0), m_box_move_offset_x(0), m_box_move_offset_y(0), m_did_initial_fit(false),
+      m_offscreen(nullptr), m_offscreen_view(nullptr) {
     // The view is repainted entirely from the offscreen buffer; app_server
     // must not pre-clear or resizing flickers.
     SetViewColor(B_TRANSPARENT_COLOR);
@@ -173,8 +173,7 @@ void GraphCanvasView::DrawClientBox(BView* view, const ClientBox& box) {
     }
 }
 
-void GraphCanvasView::DrawPort(BView* view, const Node& node, double x, double y,
-                               bool is_output) {
+void GraphCanvasView::DrawPort(BView* view, const Node& node, double x, double y, bool is_output) {
     double w = ClientBox::PORT_BG_WIDTH;
     double h = ClientBox::PORT_HEIGHT;
 
@@ -234,9 +233,9 @@ void GraphCanvasView::DrawCable(BView* view, double x1, double y1, double x2, do
 
 void GraphCanvasView::DrawConnectionLine(BView* view, const Connection& conn) {
     view->SetHighColor(kCable);
-    DrawCable(view, conn.source->x + conn.source->width,
-              conn.source->y + conn.source->height / 2, conn.destination->x,
-              conn.destination->y + conn.destination->height / 2, B_SOLID_HIGH);
+    DrawCable(view, conn.source->x + conn.source->width, conn.source->y + conn.source->height / 2,
+              conn.destination->x, conn.destination->y + conn.destination->height / 2,
+              B_SOLID_HIGH);
 }
 
 void GraphCanvasView::DrawDragPreview(BView* view) {
@@ -270,6 +269,13 @@ void GraphCanvasView::remove_all() {
 void GraphCanvasView::set_zoom(double zoom) {
     m_zoom = std::max(0.25, std::min(zoom, 4.0));
     Invalidate();
+}
+
+// Forget user-dragged positions and lay everything out from scratch.
+void GraphCanvasView::reset_layout() {
+    m_saved_positions.clear();
+    layout(false);
+    fit_to_window();
 }
 
 void GraphCanvasView::fit_to_window() {
@@ -583,16 +589,16 @@ void GraphCanvasView::MouseMoved(BPoint where, uint32 code, const BMessage* drag
 
         for (size_t i = 0; i < m_moving_box->inputs.size(); ++i) {
             m_moving_box->inputs[i]->x = m_moving_box->x + ClientBox::SIDE_PAD;
-            m_moving_box->inputs[i]->y =
-                m_moving_box->y + ClientBox::HEADER_HEIGHT + ClientBox::PORT_PAD +
-                i * (ClientBox::PORT_HEIGHT + ClientBox::PORT_PAD);
+            m_moving_box->inputs[i]->y = m_moving_box->y + ClientBox::HEADER_HEIGHT +
+                                         ClientBox::PORT_PAD +
+                                         i * (ClientBox::PORT_HEIGHT + ClientBox::PORT_PAD);
         }
         for (size_t i = 0; i < m_moving_box->outputs.size(); ++i) {
             m_moving_box->outputs[i]->x =
                 m_moving_box->x + ClientBox::SIDE_PAD + ClientBox::COL_WIDTH + ClientBox::SIDE_PAD;
-            m_moving_box->outputs[i]->y =
-                m_moving_box->y + ClientBox::HEADER_HEIGHT + ClientBox::PORT_PAD +
-                i * (ClientBox::PORT_HEIGHT + ClientBox::PORT_PAD);
+            m_moving_box->outputs[i]->y = m_moving_box->y + ClientBox::HEADER_HEIGHT +
+                                          ClientBox::PORT_PAD +
+                                          i * (ClientBox::PORT_HEIGHT + ClientBox::PORT_PAD);
         }
         Invalidate();
         return;

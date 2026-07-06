@@ -41,6 +41,7 @@ public:
     double get_zoom() const { return m_zoom; }
 
     void layout(bool preserve_positions = false);
+    void reset_layout();
     void fit_to_window();
 
     const std::vector<std::shared_ptr<Node>>& get_nodes() const { return m_nodes; }
