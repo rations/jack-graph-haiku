@@ -1,0 +1,44 @@
+# HaikuPorts recipe for JackGraph (native Haiku JACK patchbay).
+#
+# NOT YET VALIDATED with haikuporter — verify with `haikuporter -c jackgraph` on the
+# target and pin SOURCE_URI to a tag/commit.
+SUMMARY="Native Haiku JACK patchbay and server control"
+DESCRIPTION="A native Interface Kit application to start/stop the JACK server, adjust \
+its settings, and manage port connections on a graph canvas."
+HOMEPAGE="https://github.com/rations/jack-graph-haiku"
+COPYRIGHT="2026 rations"
+LICENSE="MIT"
+REVISION="1"
+SOURCE_URI="git+https://github.com/rations/jack-graph-haiku#master"
+SOURCE_DIR="jack-graph-haiku"
+ARCHITECTURES="x86_64"
+
+PROVIDES="
+	jackgraph = 0.1
+	app:JackGraph = 0.1
+	"
+REQUIRES="
+	haiku
+	jack
+	"
+BUILD_REQUIRES="
+	haiku_devel
+	jack
+	devel:libjack
+	"
+BUILD_PREREQUISITES="
+	cmd:gcc
+	cmd:make
+	"
+
+BUILD()
+{
+	make
+}
+
+INSTALL()
+{
+	mkdir -p $appsDir
+	cp JackGraph $appsDir/JackGraph
+	addAppDeskbarSymlink $appsDir/JackGraph
+}

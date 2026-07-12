@@ -1,0 +1,25 @@
+name			jackgraph
+version			0.1-1
+architecture	x86_64
+summary			"Native Haiku JACK patchbay and server control"
+description		"A native Interface Kit application to start and stop the JACK server,
+adjust its settings, and view and manage port connections on a graph canvas. The GUI
+front-end for the JACK-on-Haiku stack."
+packager		"rations <ehqcar@proton.me>"
+vendor			"rations"
+copyrights {
+	"2026 rations"
+}
+licenses {
+	"MIT"
+}
+provides {
+	jackgraph = 0.1
+	app:JackGraph = 0.1
+}
+requires {
+	jack
+}
+urls {
+	"https://github.com/rations/jack-graph-haiku"
+}
