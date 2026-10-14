@@ -53,8 +53,7 @@ MainWindow::MainWindow()
         .End();
 
     m_canvas->set_connect_callback([this](const std::string& src, const std::string& dst) {
-        if (m_jack_connected)
-            m_jack.connect_ports(src, dst);
+        return m_jack_connected && m_jack.connect_ports(src, dst);
     });
     m_canvas->set_disconnect_callback([this](const std::string& src, const std::string& dst) {
         if (m_jack_connected)
@@ -177,13 +176,20 @@ void MainWindow::MessageReceived(BMessage* message) {
             RefreshPorts();
             break;
 
-        case kMsgJackShutdown:
+        case kMsgJackShutdown: {
+            // A shutdown reported for an earlier client must not close the
+            // one we have reconnected since.
+            uint32 generation = 0;
+            if (message->FindUInt32("generation", &generation) == B_OK &&
+                generation != m_jack.generation())
+                break;
             // The server went away; close the client from this (window)
             // thread — never from the JACK callback that reported it.
             m_jack.disconnect();
             m_jack_connected = false;
             RefreshPorts();
             break;
+        }
 
         case kMsgStatusTick:
             if (!m_jack_connected) {
@@ -202,11 +208,11 @@ void MainWindow::MessageReceived(BMessage* message) {
             break;
 
         case kMsgMenuZoomIn:
-            m_canvas->set_zoom(m_canvas->get_zoom() * 1.2);
+            m_canvas->set_zoom_around(m_canvas->get_zoom() * 1.2, CanvasCenter());
             break;
 
         case kMsgMenuZoomOut:
-            m_canvas->set_zoom(m_canvas->get_zoom() / 1.2);
+            m_canvas->set_zoom_around(m_canvas->get_zoom() / 1.2, CanvasCenter());
             break;
 
         case kMsgMenuZoomNormal:
@@ -293,6 +299,11 @@ void MainWindow::MessageReceived(BMessage* message) {
             BWindow::MessageReceived(message);
             break;
     }
+}
+
+BPoint MainWindow::CanvasCenter() const {
+    BRect bounds = m_canvas->Bounds();
+    return BPoint((bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2);
 }
 
 void MainWindow::OpenSettingsWindow() {

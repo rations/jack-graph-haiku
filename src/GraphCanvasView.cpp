@@ -23,8 +23,8 @@ static const rgb_color kDragPreview = {230, 128, 51, 178};
 GraphCanvasView::GraphCanvasView()
     : BView("graph_canvas", B_WILL_DRAW | B_FRAME_EVENTS), m_zoom(1.0), m_pan_x(0.0), m_pan_y(0.0),
       m_is_dragging(false), m_is_panning(false), m_is_moving_box(false), m_drag_source(nullptr),
-      m_moving_box(nullptr), m_drag_current_x(0), m_drag_current_y(0), m_pan_start_x(0),
-      m_pan_start_y(0), m_box_move_offset_x(0), m_box_move_offset_y(0), m_did_initial_fit(false),
+      m_drag_current_x(0), m_drag_current_y(0), m_pan_start_x(0), m_pan_start_y(0),
+      m_box_move_offset_x(0), m_box_move_offset_y(0), m_did_initial_fit(false),
       m_offscreen(nullptr), m_offscreen_view(nullptr) {
     // The view is repainted entirely from the offscreen buffer; app_server
     // must not pre-clear or resizing flickers.
@@ -271,6 +271,18 @@ void GraphCanvasView::set_zoom(double zoom) {
     Invalidate();
 }
 
+// Scaling about the canvas origin slid whatever was being looked at towards
+// the top-left with every step; hold the point under `where` still instead.
+void GraphCanvasView::set_zoom_around(double zoom, BPoint where) {
+    double cx = (where.x - m_pan_x) / m_zoom;
+    double cy = (where.y - m_pan_y) / m_zoom;
+    m_zoom = std::max(0.25, std::min(zoom, 4.0));
+    /* screen = canvas * zoom + pan, solved for pan with the canvas point held */
+    m_pan_x = where.x - cx * m_zoom;
+    m_pan_y = where.y - cy * m_zoom;
+    Invalidate();
+}
+
 // Forget user-dragged positions and lay everything out from scratch.
 void GraphCanvasView::reset_layout() {
     m_saved_positions.clear();
@@ -385,24 +397,6 @@ void GraphCanvasView::layout(bool preserve_positions) {
     double mid_x = LAYOUT_MARGIN + max_box_width + COL_GAP;
     double right_x = LAYOUT_MARGIN + max_box_width * 2 + COL_GAP * 2;
 
-    auto position_ports = [&](ClientBox* box) {
-        for (size_t i = 0; i < box->inputs.size(); ++i) {
-            box->inputs[i]->x = box->x + ClientBox::SIDE_PAD;
-            box->inputs[i]->y = box->y + ClientBox::HEADER_HEIGHT + ClientBox::PORT_PAD +
-                                i * (ClientBox::PORT_HEIGHT + ClientBox::PORT_PAD);
-            box->inputs[i]->width = ClientBox::COL_WIDTH;
-            box->inputs[i]->height = ClientBox::PORT_HEIGHT;
-        }
-        for (size_t i = 0; i < box->outputs.size(); ++i) {
-            box->outputs[i]->x =
-                box->x + ClientBox::SIDE_PAD + ClientBox::COL_WIDTH + ClientBox::SIDE_PAD;
-            box->outputs[i]->y = box->y + ClientBox::HEADER_HEIGHT + ClientBox::PORT_PAD +
-                                 i * (ClientBox::PORT_HEIGHT + ClientBox::PORT_PAD);
-            box->outputs[i]->width = ClientBox::COL_WIDTH;
-            box->outputs[i]->height = ClientBox::PORT_HEIGHT;
-        }
-    };
-
     double left_y = LAYOUT_MARGIN;
     double mid_y = LAYOUT_MARGIN;
     double right_y = LAYOUT_MARGIN;
@@ -446,35 +440,124 @@ void GraphCanvasView::layout(bool preserve_positions) {
     Invalidate();
 }
 
+void GraphCanvasView::position_ports(ClientBox* box) {
+    for (size_t i = 0; i < box->inputs.size(); ++i) {
+        box->inputs[i]->x = box->x + ClientBox::SIDE_PAD;
+        box->inputs[i]->y = box->y + ClientBox::HEADER_HEIGHT + ClientBox::PORT_PAD +
+                            i * (ClientBox::PORT_HEIGHT + ClientBox::PORT_PAD);
+        box->inputs[i]->width = ClientBox::COL_WIDTH;
+        box->inputs[i]->height = ClientBox::PORT_HEIGHT;
+    }
+    for (size_t i = 0; i < box->outputs.size(); ++i) {
+        box->outputs[i]->x =
+            box->x + ClientBox::SIDE_PAD + ClientBox::COL_WIDTH + ClientBox::SIDE_PAD;
+        box->outputs[i]->y = box->y + ClientBox::HEADER_HEIGHT + ClientBox::PORT_PAD +
+                             i * (ClientBox::PORT_HEIGHT + ClientBox::PORT_PAD);
+        box->outputs[i]->width = ClientBox::COL_WIDTH;
+        box->outputs[i]->height = ClientBox::PORT_HEIGHT;
+    }
+}
+
+/* All hit tests walk the boxes last to first. DrawScene() paints them first to
+ * last, so the last one is on top, and where two boxes overlap a click belongs
+ * to the one the user can see. A port dot sits on the box edge, half outside
+ * it, so the port tests widen each box by the dot's hit radius. */
 std::shared_ptr<Node> GraphCanvasView::find_output_port_at(double x, double y) {
-    for (auto& box : m_client_boxes) {
-        if (x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height) {
-            double local_x = x - box.x;
-            double local_y = y - box.y;
-            return box.find_output_at(local_x, local_y);
+    constexpr double REACH = 10.0; /* ClientBox::find_output_at's own radius */
+    for (auto it = m_client_boxes.rbegin(); it != m_client_boxes.rend(); ++it) {
+        ClientBox& box = *it;
+        if (x >= box.x - REACH && x <= box.x + box.width + REACH && y >= box.y &&
+            y <= box.y + box.height) {
+            if (auto node = box.find_output_at(x - box.x, y - box.y))
+                return node;
         }
     }
     return nullptr;
 }
 
 std::shared_ptr<Node> GraphCanvasView::find_input_port_at(double x, double y) {
-    for (auto& box : m_client_boxes) {
-        if (x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height) {
-            double local_x = x - box.x;
-            double local_y = y - box.y;
-            return box.find_input_at(local_x, local_y);
+    constexpr double REACH = 10.0;
+    for (auto it = m_client_boxes.rbegin(); it != m_client_boxes.rend(); ++it) {
+        ClientBox& box = *it;
+        if (x >= box.x - REACH && x <= box.x + box.width + REACH && y >= box.y &&
+            y <= box.y + box.height) {
+            if (auto node = box.find_input_at(x - box.x, y - box.y))
+                return node;
         }
     }
     return nullptr;
 }
 
 ClientBox* GraphCanvasView::find_box_at(double x, double y) {
-    for (auto& box : m_client_boxes) {
-        if (box.contains(x, y)) {
-            return &box;
-        }
+    for (auto it = m_client_boxes.rbegin(); it != m_client_boxes.rend(); ++it) {
+        if (it->contains(x, y))
+            return &*it;
     }
     return nullptr;
+}
+
+ClientBox* GraphCanvasView::box_for(const std::string& client) {
+    for (auto& box : m_client_boxes) {
+        if (box.client_name == client)
+            return &box;
+    }
+    return nullptr;
+}
+
+// JACK refuses to connect ports of different types; don't offer it.
+bool GraphCanvasView::compatible(const Node& src, const Node& dst) {
+    return src.type == dst.type;
+}
+
+/* Distance to the drawn curve, not to the straight line between its ends: the
+ * chord missed any cable that bowed away from it, which is every long cable
+ * between boxes at different heights. Samples the same cubic DrawCable() uses. */
+int GraphCanvasView::connection_at(double x, double y) const {
+    constexpr int STEPS = 32;
+    /* Ten canvas units, but never less than about four pixels on screen. */
+    const double tol = std::max(10.0, 4.0 / m_zoom);
+
+    int best = -1;
+    double best_d2 = tol * tol;
+    for (size_t i = 0; i < m_connections.size(); ++i) {
+        const Connection& conn = *m_connections[i];
+        const double x0 = conn.source->x + conn.source->width;
+        const double y0 = conn.source->y + conn.source->height / 2;
+        const double x3 = conn.destination->x;
+        const double y3 = conn.destination->y + conn.destination->height / 2;
+        const double slack = std::abs(x3 - x0) * 0.5;
+        const double x1 = x0 + slack, y1 = y0;
+        const double x2 = x3 - slack, y2 = y3;
+
+        /* Cheap reject: the curve lies inside the hull of its four points. */
+        if (x < std::min({x0, x1, x2, x3}) - tol || x > std::max({x0, x1, x2, x3}) + tol ||
+            y < std::min(y0, y3) - tol || y > std::max(y0, y3) + tol)
+            continue;
+
+        double px = x0, py = y0;
+        for (int k = 1; k <= STEPS; ++k) {
+            const double t = (double)k / STEPS;
+            const double u = 1.0 - t;
+            const double qx =
+                u * u * u * x0 + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3;
+            const double qy =
+                u * u * u * y0 + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3;
+            /* Distance from (x, y) to the segment p..q. */
+            const double dx = qx - px, dy = qy - py;
+            const double len2 = dx * dx + dy * dy;
+            double sp = len2 > 0.0 ? ((x - px) * dx + (y - py) * dy) / len2 : 0.0;
+            sp = std::max(0.0, std::min(1.0, sp));
+            const double ex = px + sp * dx - x, ey = py + sp * dy - y;
+            const double d2 = ex * ex + ey * ey;
+            if (d2 < best_d2) {
+                best_d2 = d2;
+                best = (int)i;
+            }
+            px = qx;
+            py = qy;
+        }
+    }
+    return best;
 }
 
 void GraphCanvasView::MouseDown(BPoint where) {
@@ -501,7 +584,7 @@ void GraphCanvasView::MouseDown(BPoint where) {
         auto* box = find_box_at(x, y);
         if (box) {
             m_is_moving_box = true;
-            m_moving_box = box;
+            m_moving_box_client = box->client_name;
             m_box_move_offset_x = x - box->x;
             m_box_move_offset_y = y - box->y;
             return;
@@ -514,25 +597,15 @@ void GraphCanvasView::MouseDown(BPoint where) {
     }
 
     if (buttons & B_SECONDARY_MOUSE_BUTTON) {
-        for (auto it = m_connections.begin(); it != m_connections.end(); ++it) {
-            auto& conn = *it;
-            double x1 = conn->source->x + conn->source->width;
-            double y1 = conn->source->y + conn->source->height / 2;
-            double x2 = conn->destination->x;
-            double y2 = conn->destination->y + conn->destination->height / 2;
-
-            double num = std::abs((y2 - y1) * x - (x2 - x1) * y + x2 * y1 - y2 * x1);
-            double den = std::sqrt((y2 - y1) * (y2 - y1) + (x2 - x1) * (x2 - x1));
-            double dist = (den > 0) ? num / den : num;
-
-            if (dist < 10 && x >= std::min(x1, x2) - 10 && x <= std::max(x1, x2) + 10) {
-                if (m_disconnect_cb) {
-                    m_disconnect_cb(conn->source->full_name(), conn->destination->full_name());
-                }
-                m_connections.erase(it);
-                Invalidate();
-                return;
+        int hit = connection_at(x, y);
+        if (hit >= 0) {
+            auto conn = m_connections[(size_t)hit];
+            if (m_disconnect_cb) {
+                m_disconnect_cb(conn->source->full_name(), conn->destination->full_name());
             }
+            m_connections.erase(m_connections.begin() + hit);
+            Invalidate();
+            return;
         }
     }
 }
@@ -543,11 +616,10 @@ void GraphCanvasView::MouseUp(BPoint where) {
         double y = (where.y - m_pan_y) / m_zoom;
 
         auto target = find_input_port_at(x, y);
-        if (target && target != m_drag_source) {
-            if (m_connect_cb) {
-                m_connect_cb(m_drag_source->full_name(), target->full_name());
-            }
-
+        // Draw the cable straight away, so it appears under the pointer that
+        // made it -- but only once the server has said yes.
+        if (target && target != m_drag_source && compatible(*m_drag_source, *target) &&
+            m_connect_cb && m_connect_cb(m_drag_source->full_name(), target->full_name())) {
             auto conn = std::make_shared<Connection>(m_drag_source, target, m_drag_source->type);
             m_connections.push_back(conn);
         }
@@ -560,7 +632,7 @@ void GraphCanvasView::MouseUp(BPoint where) {
 
     if (m_is_moving_box) {
         m_is_moving_box = false;
-        m_moving_box = nullptr;
+        m_moving_box_client.clear();
         return;
     }
 
@@ -581,25 +653,20 @@ void GraphCanvasView::MouseMoved(BPoint where, uint32 code, const BMessage* drag
         return;
     }
 
-    if (m_is_moving_box && m_moving_box) {
+    if (m_is_moving_box) {
+        // Resolved on every move: a client that left the graph during its own
+        // drag has nothing left to move, so the drag just ends.
+        ClientBox* box = box_for(m_moving_box_client);
+        if (box == nullptr) {
+            m_is_moving_box = false;
+            m_moving_box_client.clear();
+            return;
+        }
         double x = (where.x - m_pan_x) / m_zoom;
         double y = (where.y - m_pan_y) / m_zoom;
-        m_moving_box->x = x - m_box_move_offset_x;
-        m_moving_box->y = y - m_box_move_offset_y;
-
-        for (size_t i = 0; i < m_moving_box->inputs.size(); ++i) {
-            m_moving_box->inputs[i]->x = m_moving_box->x + ClientBox::SIDE_PAD;
-            m_moving_box->inputs[i]->y = m_moving_box->y + ClientBox::HEADER_HEIGHT +
-                                         ClientBox::PORT_PAD +
-                                         i * (ClientBox::PORT_HEIGHT + ClientBox::PORT_PAD);
-        }
-        for (size_t i = 0; i < m_moving_box->outputs.size(); ++i) {
-            m_moving_box->outputs[i]->x =
-                m_moving_box->x + ClientBox::SIDE_PAD + ClientBox::COL_WIDTH + ClientBox::SIDE_PAD;
-            m_moving_box->outputs[i]->y = m_moving_box->y + ClientBox::HEADER_HEIGHT +
-                                          ClientBox::PORT_PAD +
-                                          i * (ClientBox::PORT_HEIGHT + ClientBox::PORT_PAD);
-        }
+        box->x = x - m_box_move_offset_x;
+        box->y = y - m_box_move_offset_y;
+        position_ports(box);
         Invalidate();
         return;
     }
@@ -618,8 +685,12 @@ void GraphCanvasView::MessageReceived(BMessage* message) {
     if (message->what == B_MOUSE_WHEEL_CHANGED) {
         float delta_y = 0;
         if (message->FindFloat("be:wheel_delta_y", &delta_y) == B_OK && delta_y != 0) {
-            // Wheel up (negative delta) zooms in, matching the original.
-            set_zoom(delta_y < 0 ? m_zoom * 1.1 : m_zoom / 1.1);
+            // Wheel up (negative delta) zooms in, matching the original,
+            // about the pointer so the port under it stays in view.
+            BPoint where;
+            uint32 buttons;
+            GetMouse(&where, &buttons, false);
+            set_zoom_around(delta_y < 0 ? m_zoom * 1.1 : m_zoom / 1.1, where);
         }
         return;
     }

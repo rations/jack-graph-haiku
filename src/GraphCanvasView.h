@@ -38,6 +38,8 @@ public:
     void remove_all();
 
     void set_zoom(double zoom);
+    // Zoom so the canvas point under view point `where` stays under it.
+    void set_zoom_around(double zoom, BPoint where);
     double get_zoom() const { return m_zoom; }
 
     void layout(bool preserve_positions = false);
@@ -46,7 +48,8 @@ public:
 
     const std::vector<std::shared_ptr<Node>>& get_nodes() const { return m_nodes; }
 
-    using ConnectCallback = std::function<void(const std::string& source, const std::string& dest)>;
+    // Returns whether the connection was made; the cable is drawn only if it was.
+    using ConnectCallback = std::function<bool(const std::string& source, const std::string& dest)>;
     void set_connect_callback(ConnectCallback cb) { m_connect_cb = std::move(cb); }
 
     using DisconnectCallback =
@@ -68,6 +71,10 @@ private:
     std::shared_ptr<Node> find_output_port_at(double x, double y);
     std::shared_ptr<Node> find_input_port_at(double x, double y);
     ClientBox* find_box_at(double x, double y);
+    ClientBox* box_for(const std::string& client);
+    int connection_at(double x, double y) const;
+    static void position_ports(ClientBox* box);
+    static bool compatible(const Node& src, const Node& dst);
 
     std::vector<std::shared_ptr<Node>> m_nodes;
     std::vector<std::shared_ptr<Connection>> m_connections;
@@ -85,7 +92,9 @@ private:
     bool m_is_panning;
     bool m_is_moving_box;
     std::shared_ptr<Node> m_drag_source;
-    ClientBox* m_moving_box;
+    // The box being dragged, held by client name and looked up on every move:
+    // a graph refresh rebuilds m_client_boxes, so a pointer would dangle.
+    std::string m_moving_box_client;
     double m_drag_current_x;
     double m_drag_current_y;
     double m_pan_start_x;

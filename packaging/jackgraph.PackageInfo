@@ -1,5 +1,5 @@
 name			jackgraph
-version			0.1-1
+version			0.2-1
 architecture	x86_64
 summary			"Native Haiku JACK patchbay and server control"
 description		"A native Interface Kit application to start and stop the JACK server,
@@ -14,8 +14,8 @@ licenses {
 	"MIT"
 }
 provides {
-	jackgraph = 0.1
-	app:JackGraph = 0.1
+	jackgraph = 0.2
+	app:JackGraph = 0.2
 }
 requires {
 	jack

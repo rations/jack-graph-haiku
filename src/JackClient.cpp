@@ -5,7 +5,8 @@
 
 #include "Messages.h"
 
-JackClient::JackClient() : m_client(nullptr), m_active(false), m_xrun_count(0) {}
+JackClient::JackClient()
+    : m_client(nullptr), m_active(false), m_server_gone(false), m_generation(0), m_xrun_count(0) {}
 
 JackClient::~JackClient() {
     disconnect();
@@ -24,6 +25,8 @@ bool JackClient::connect(const std::string& client_name, const BMessenger& targe
     }
 
     m_messenger = target;
+    m_server_gone.store(false, std::memory_order_release);
+    m_generation.fetch_add(1, std::memory_order_acq_rel);
     m_active.store(true, std::memory_order_release);
 
     jack_set_client_registration_callback(m_client, client_registration_callback, this);
@@ -53,7 +56,9 @@ void JackClient::disconnect() {
     // a normal application thread, never inside a JACK callback.
     m_active.store(false, std::memory_order_release);
 
-    jack_deactivate(m_client);
+    // A server that is already gone cannot be asked to deactivate us.
+    if (!server_gone())
+        jack_deactivate(m_client);
     jack_client_close(m_client);
     m_client = nullptr;
 
@@ -68,7 +73,7 @@ std::vector<JackClient::PortInfo> JackClient::get_ports() const {
 
 std::vector<JackClient::ConnectionInfo> JackClient::get_connections() const {
     std::vector<ConnectionInfo> result;
-    if (!m_client)
+    if (!usable())
         return result;
 
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -96,26 +101,26 @@ std::vector<JackClient::ConnectionInfo> JackClient::get_connections() const {
 }
 
 bool JackClient::connect_ports(const std::string& source, const std::string& dest) {
-    if (!m_client)
+    if (!usable())
         return false;
     int result = jack_connect(m_client, source.c_str(), dest.c_str());
     return (result == 0 || result == EEXIST);
 }
 
 bool JackClient::disconnect_ports(const std::string& source, const std::string& dest) {
-    if (!m_client)
+    if (!usable())
         return false;
     return jack_disconnect(m_client, source.c_str(), dest.c_str()) == 0;
 }
 
 jack_nframes_t JackClient::get_buffer_size() const {
-    if (!m_client)
+    if (!usable())
         return 0;
     return jack_get_buffer_size(m_client);
 }
 
 jack_nframes_t JackClient::get_sample_rate() const {
-    if (!m_client)
+    if (!usable())
         return 0;
     return jack_get_sample_rate(m_client);
 }
@@ -230,5 +235,11 @@ void JackClient::info_shutdown_callback(jack_status_t code, const char* reason, 
     (void)reason;
     // The client must be closed from another thread; the window reacts to
     // this message by calling disconnect() on its own thread.
-    static_cast<JackClient*>(arg)->post_message(kMsgJackShutdown);
+    JackClient* self = static_cast<JackClient*>(arg);
+    self->m_server_gone.store(true, std::memory_order_release);
+    if (!self->m_active.load(std::memory_order_acquire))
+        return;
+    BMessage msg(kMsgJackShutdown);
+    msg.AddUInt32("generation", self->m_generation.load(std::memory_order_acquire));
+    self->m_messenger.SendMessage(&msg, (BHandler*)NULL, 0);
 }

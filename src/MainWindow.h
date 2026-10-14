@@ -27,6 +27,7 @@ private:
     void UpdateStatusBar();
     void OpenSettingsWindow();
     void HandleStartRequest(BMessage* message);
+    BPoint CanvasCenter() const;
 
     BMenuBar* m_menu_bar;
     GraphCanvasView* m_canvas;

@@ -21,6 +21,12 @@ public:
     bool connect(const std::string& client_name, const BMessenger& target);
     void disconnect();
     bool is_connected() const { return m_client != nullptr; }
+    // True once JACK has reported the server gone. The handle is then an
+    // orphan: calls on it may block or fail, so the wrappers refuse it.
+    bool server_gone() const { return m_server_gone.load(std::memory_order_acquire); }
+    // Bumped on every connect(); a shutdown message carries the generation it
+    // was posted for, so a late one cannot tear down a newer client.
+    uint32 generation() const { return m_generation.load(std::memory_order_acquire); }
     std::string get_actual_client_name() const;
 
     struct PortInfo {
@@ -51,6 +57,7 @@ public:
 
 private:
     void post_message(uint32 what);
+    bool usable() const { return m_client != nullptr && !server_gone(); }
 
     static void client_registration_callback(const char* name, int reg, void* arg);
     static void port_registration_callback(jack_port_id_t port_id, int reg, void* arg);
@@ -65,6 +72,10 @@ private:
     // Gates callback message posting during connect/teardown. Written on the
     // owning (window) thread only; read from JACK notification threads.
     std::atomic<bool> m_active;
+    // Set from the JACK shutdown callback, cleared by connect().
+    std::atomic<bool> m_server_gone;
+    // Written by connect() on the owning thread; read from the shutdown callback.
+    std::atomic<uint32> m_generation;
     std::atomic<uint64_t> m_xrun_count;
     std::vector<PortInfo> m_ports;
     // Guards m_ports (scanned on the window thread, copied out by callers).
