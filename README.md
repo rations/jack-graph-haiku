@@ -1,5 +1,8 @@
 # JackGraph (Haiku)
 
+> **Users:** install the whole stack from the [JackDAW release](https://github.com/rations/jackDAW-haiku/releases)
+> (`sh install.sh`). This repository is the source of the `jackgraph` package.
+
 A native Haiku application (Interface Kit) that acts as a **JACK patchbay and server
 control**: start and stop the JACK server, adjust its settings, and view and manage port
 connections on a graph canvas. It is the GUI front-end of the JackDAW audio stack — see
